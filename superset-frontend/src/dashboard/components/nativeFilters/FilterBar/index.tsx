@@ -94,6 +94,19 @@ const EXCLUDED_URL_PARAMS: string[] = [
 
 const EMPTY_DATA_MASK_RECORD: Record<string, DataMask> = {};
 
+const hasFilterValue = (value: unknown): boolean => {
+  if (value == null) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasFilterValue);
+  }
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+  return true;
+};
+
 const publishDataMask = debounce(
   async (
     history,
@@ -247,7 +260,7 @@ const FilterBar: FC<FiltersBarProps> = ({
         const isFirstTimeInitialization = !initializedFilters.has(filter.id);
 
         // Auto-apply when filter has value but empty extraFormData in applied state
-        // This fixes the bug where defaultDataMask.filterState.value exists but extraFormData is empty
+        // This fixes the bug where defaultDataMask.filterState.value exists but empty extraFormData in applied state
         // Only auto-apply if: value matches what's applied AND extraFormData is missing in applied but present in incoming
         const needsAutoApply =
           appliedDataMask?.filterState?.value !== undefined &&
@@ -429,13 +442,25 @@ const FilterBar: FC<FiltersBarProps> = ({
   );
 
   const handleApply = useCallback(() => {
-    dispatch(logEvent(LOG_ACTIONS_CHANGE_DASHBOARD_FILTER, {}));
-    setUpdateKey(1);
-
     const filtersToApply = getFiltersToApply(
       dataMaskSelected,
       inScopeFilterIds,
     );
+
+    const appliedFilters = filtersToApply.map(filterId => ({
+      id: filterId,
+      name: filters[filterId]?.name,
+      has_value: hasFilterValue(
+        dataMaskSelected[filterId]?.filterState?.value,
+      ),
+    }));
+
+    dispatch(
+      logEvent(LOG_ACTIONS_CHANGE_DASHBOARD_FILTER, {
+        applied_filters: appliedFilters,
+      }),
+    );
+    setUpdateKey(1);
 
     filtersToApply.forEach(filterId => {
       const dataMask = dataMaskSelected[filterId];
@@ -497,11 +522,11 @@ const FilterBar: FC<FiltersBarProps> = ({
 
       dispatch(saveChartCustomization(clearedChartCustomizations, []));
     }
-
     setHasClearedChartCustomizations(false);
   }, [
     dataMaskSelected,
     dispatch,
+    filters,
     inScopeFilterIds,
     pendingChartCustomizations,
     pendingCustomizationDataMasks,
