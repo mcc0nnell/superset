@@ -18,7 +18,12 @@
  */
 
 import React from 'react';
-import { render, screen, userEvent, waitFor } from 'spec/helpers/testing-library';
+import {
+  render,
+  screen,
+  userEvent,
+  waitFor,
+} from 'spec/helpers/testing-library';
 import { stateWithoutNativeFilters } from 'spec/fixtures/mockStore';
 import { Menu, MenuItem } from '@superset-ui/core/components/Menu';
 import { isFeatureEnabled } from '@superset-ui/core';
