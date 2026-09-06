@@ -53,6 +53,9 @@ from superset.common.form_data_query_context import (
     is_raw_query_mode,
 )
 from superset.dashboards.excel_export import email
+from superset.dashboards.excel_export.config_snapshot import (
+    export_config_snapshot_sha256,
+)
 from superset.dashboards.excel_export.evidence import (
     build_excel_export_evidence,
     serialize_excel_export_evidence,
@@ -433,6 +436,7 @@ def export_dashboard_excel(
     active_data_mask: dict[str, Any],
     job_id: str,
     mode: str = EXPORT_MODE_DATA,
+    config_snapshot_sha256: str | None = None,
 ) -> None:
     """
     Export a dashboard's charts to an ``.xlsx`` and email a download link.
@@ -443,6 +447,8 @@ def export_dashboard_excel(
     :param job_id: Correlation id, also the Celery task id and S3 object name
     :param mode: ``"data"`` streams every chart's tabular result; ``"images"``
         embeds non-table charts as rendered images and keeps tables tabular
+    :param config_snapshot_sha256: Enqueue-time dashboard/chart config fingerprint.
+        When present, the worker verifies it before and after workbook generation.
     """
     # pylint: disable=import-outside-toplevel
     from superset.models.dashboard import Dashboard
@@ -461,6 +467,17 @@ def export_dashboard_excel(
                 raise ValueError(f"Dashboard {dashboard_id} not found")
             dashboard_title = dashboard.dashboard_title or f"Dashboard {dashboard_id}"
 
+            observed_config_snapshot = export_config_snapshot_sha256(
+                dashboard, active_data_mask, mode
+            )
+            if (
+                config_snapshot_sha256 is not None
+                and observed_config_snapshot != config_snapshot_sha256
+            ):
+                raise RuntimeError(
+                    "Dashboard/chart export configuration changed after enqueue"
+                )
+
             file_descriptor, tmp_path = tempfile.mkstemp(
                 suffix=".xlsx", prefix=f"dash-export-{job_id}-"
             )
@@ -469,6 +486,30 @@ def export_dashboard_excel(
             errored = _build_workbook(
                 tmp_path, dashboard, active_data_mask, job_id, mode, user
             )
+
+            # Detect configuration changes that occurred while the export was
+            # being generated. Expire/reload the ORM graph so this is a database
+            # re-check rather than a comparison against the same in-memory rows.
+            db.session.expire_all()
+            verified_dashboard = (
+                db.session.query(Dashboard).filter_by(id=dashboard_id).one_or_none()
+            )
+            if verified_dashboard is None:
+                raise RuntimeError(
+                    "Dashboard was removed while the Excel export was running"
+                )
+            completed_config_snapshot = export_config_snapshot_sha256(
+                verified_dashboard, active_data_mask, mode
+            )
+            if (
+                config_snapshot_sha256 is not None
+                and completed_config_snapshot != config_snapshot_sha256
+            ):
+                raise RuntimeError(
+                    "Dashboard/chart export configuration changed during generation"
+                )
+            dashboard = verified_dashboard
+            observed_config_snapshot = completed_config_snapshot
 
             bucket = current_app.config["EXCEL_EXPORT_S3_BUCKET"]
             key = (
@@ -494,6 +535,8 @@ def export_dashboard_excel(
                 requested_at=requested_at,
                 completed_at=completed_at,
                 errored=errored,
+                config_snapshot_sha256=observed_config_snapshot,
+                config_snapshot_verified=(config_snapshot_sha256 is not None),
             )
             artifact_sha256 = evidence["artifact"]["sha256"]
 
