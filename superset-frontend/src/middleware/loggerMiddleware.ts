@@ -25,8 +25,13 @@ import type { Middleware, Dispatch, Action } from 'redux';
 import { safeStringify } from '../utils/safeStringify';
 import { LOG_EVENT } from '../logger/actions';
 import {
-  LOG_EVENT_TYPE_TIMING,
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_IMAGE,
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_PDF,
+  LOG_ACTIONS_EXPORT_CSV_DASHBOARD_CHART,
+  LOG_ACTIONS_EXPORT_XLSX_DASHBOARD_CHART,
+  LOG_ACTIONS_SELECT_DASHBOARD_TAB,
   LOG_ACTIONS_SPA_NAVIGATION,
+  LOG_EVENT_TYPE_TIMING,
 } from '../logger/LogUtils';
 import DebouncedMessageQueue from '../utils/DebouncedMessageQueue';
 import { ensureAppRoot } from '../utils/navigationUtils';
@@ -80,12 +85,34 @@ interface SqlLabState {
   tabHistory: string[];
 }
 
+interface LoggerDataMask {
+  filterState?: {
+    value?: unknown;
+  };
+}
+
+interface LoggerNativeFilter {
+  name?: string;
+}
+
+interface LoggerNativeFiltersState {
+  filters?: Record<string, LoggerNativeFilter>;
+}
+
+interface AppliedFilterContext {
+  id: string;
+  name?: string;
+  has_value: boolean;
+}
+
 interface LoggerRootState {
   dashboardInfo?: DashboardInfo;
   explore?: ExploreState;
   impressionId?: string;
   dashboardLayout?: DashboardLayoutState;
   sqlLab?: SqlLabState;
+  dataMask?: Record<string, LoggerDataMask>;
+  nativeFilters?: LoggerNativeFiltersState;
 }
 
 interface LoggerStore {
@@ -142,6 +169,43 @@ const logMessageQueue = new DebouncedMessageQueue<LogEventData>({
 const EMBEDDED_ROUTE_REGEX =
   /\/dashboard\/[^/]+\/embedded(?:[/?#]|$)|\/embedded\/[^/]+\/?/;
 
+// Keep filter-context enrichment limited to high-value user actions. In
+// particular, chart load/render events can fire once per chart and would
+// multiply log volume without adding useful audit context.
+const FILTER_CONTEXT_EVENTS = new Set([
+  LOG_ACTIONS_SELECT_DASHBOARD_TAB,
+  LOG_ACTIONS_EXPORT_CSV_DASHBOARD_CHART,
+  LOG_ACTIONS_EXPORT_XLSX_DASHBOARD_CHART,
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_IMAGE,
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_PDF,
+]);
+
+const hasFilterValue = (value: unknown): boolean => {
+  if (value == null) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasFilterValue);
+  }
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+  return true;
+};
+
+const getAppliedFilterContext = (
+  dataMask?: Record<string, LoggerDataMask>,
+  nativeFilters?: LoggerNativeFiltersState,
+): AppliedFilterContext[] =>
+  Object.entries(dataMask ?? {})
+    .filter(([filterId]) => nativeFilters?.filters?.[filterId])
+    .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+    .map(([filterId, mask]) => ({
+      id: filterId,
+      name: nativeFilters?.filters?.[filterId]?.name,
+      has_value: hasFilterValue(mask?.filterState?.value),
+    }));
+
 let lastEventId: string | number = 0;
 
 const loggerMiddleware: Middleware<
@@ -159,8 +223,15 @@ const loggerMiddleware: Middleware<
     }
 
     const logAction = action as LogEventAction;
-    const { dashboardInfo, explore, impressionId, dashboardLayout, sqlLab } =
-      store.getState();
+    const {
+      dashboardInfo,
+      explore,
+      impressionId,
+      dashboardLayout,
+      sqlLab,
+      dataMask,
+      nativeFilters,
+    } = store.getState();
     let logMetadata: LogEventData = {
       impression_id: impressionId,
       version: 'v2',
@@ -209,6 +280,18 @@ const loggerMiddleware: Middleware<
       event_name: eventName,
       ...eventData,
     };
+
+    if (
+      FILTER_CONTEXT_EVENTS.has(eventName) &&
+      (eventData.source === 'dashboard' ||
+        eventData.source === 'embedded_dashboard')
+    ) {
+      eventData = {
+        ...eventData,
+        applied_filters: getAppliedFilterContext(dataMask, nativeFilters),
+      };
+    }
+
     if (LOG_EVENT_TYPE_TIMING.has(eventName)) {
       eventData = {
         ...eventData,
