@@ -67,6 +67,22 @@ def upload_file_to_s3(local_path: str, bucket: str, key: str) -> None:
     _get_s3_client().upload_file(local_path, bucket, key)
 
 
+def upload_bytes_to_s3(
+    data: bytes,
+    bucket: str,
+    key: str,
+    *,
+    content_type: str = "application/octet-stream",
+) -> None:
+    """Upload a small in-memory export sidecar to S3."""
+    _get_s3_client().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+
+
 def generate_presigned_url(bucket: str, key: str, expires_in: int) -> str:
     """
     Generate a time-limited pre-signed URL for downloading an S3 object.

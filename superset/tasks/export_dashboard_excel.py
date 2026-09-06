@@ -53,6 +53,10 @@ from superset.common.form_data_query_context import (
     is_raw_query_mode,
 )
 from superset.dashboards.excel_export import email
+from superset.dashboards.excel_export.evidence import (
+    build_excel_export_evidence,
+    serialize_excel_export_evidence,
+)
 from superset.dashboards.excel_export.layout import get_charts_in_layout_order
 from superset.dashboards.excel_export.screenshot import render_chart_image
 from superset.extensions import celery_app
@@ -472,9 +476,47 @@ def export_dashboard_excel(
                 f"{dashboard_id}/{job_id}.xlsx"
             )
             ttl = current_app.config["EXCEL_EXPORT_LINK_TTL_SECONDS"]
+            completed_at = datetime.now(tz=timezone.utc)
+            changed_on = (
+                dashboard.changed_on
+                if isinstance(getattr(dashboard, "changed_on", None), datetime)
+                else None
+            )
+            evidence = build_excel_export_evidence(
+                path=tmp_path,
+                artifact_filename=os.path.basename(key),
+                dashboard_id=dashboard.id,
+                dashboard_title=dashboard_title,
+                dashboard_changed_on=changed_on,
+                active_data_mask=active_data_mask,
+                job_id=job_id,
+                mode=mode,
+                requested_at=requested_at,
+                completed_at=completed_at,
+                errored=errored,
+            )
+            artifact_sha256 = evidence["artifact"]["sha256"]
 
             s3.upload_file_to_s3(tmp_path, bucket, key)
             download_url = s3.generate_presigned_url(bucket, key, ttl)
+            evidence_url: str | None = None
+            evidence_key = f"{key}.evidence.json"
+            try:
+                s3.upload_bytes_to_s3(
+                    serialize_excel_export_evidence(evidence),
+                    bucket,
+                    evidence_key,
+                    content_type="application/json",
+                )
+                evidence_url = s3.generate_presigned_url(bucket, evidence_key, ttl)
+            except Exception:  # pylint: disable=broad-except
+                # The workbook is already uploaded. Evidence transport is
+                # best-effort so an attestation-sidecar failure never withholds a
+                # successfully generated export from the requesting user.
+                logger.exception(
+                    "Failed to upload Excel export evidence for job %s", job_id
+                )
+
             expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=ttl)
 
             if user and getattr(user, "email", None):
@@ -489,6 +531,8 @@ def export_dashboard_excel(
                             expires_at=expires_at,
                             ttl_seconds=ttl,
                             errored=errored,
+                            evidence_url=evidence_url,
+                            artifact_sha256=artifact_sha256,
                         ),
                     )
                 except Exception:  # pylint: disable=broad-except
