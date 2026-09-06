@@ -93,7 +93,7 @@ const canonicalize = (value: unknown): unknown => {
 };
 
 export const stableStringify = (value: unknown): string =>
-  JSON.stringify(canonicalize(value));
+  JSON.stringify(canonicalize(value)) ?? 'null';
 
 export const sha256Hex = async (value: unknown): Promise<string> => {
   const subtle = globalThis.crypto?.subtle;
