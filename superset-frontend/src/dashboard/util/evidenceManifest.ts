@@ -104,7 +104,7 @@ const canonicalize = (value: unknown): unknown => {
 export const stableStringify = (value: unknown): string =>
   JSON.stringify(canonicalize(value)) ?? 'null';
 
-const bytesToSha256Hex = async (bytes: ArrayBuffer): Promise<string> => {
+const bytesToSha256Hex = async (bytes: BufferSource): Promise<string> => {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {
     throw new Error('Web Crypto SHA-256 is unavailable');
@@ -116,10 +116,8 @@ const bytesToSha256Hex = async (bytes: ArrayBuffer): Promise<string> => {
     .join('');
 };
 
-export const sha256Hex = async (value: unknown): Promise<string> => {
-  const bytes = new TextEncoder().encode(stableStringify(value));
-  return bytesToSha256Hex(bytes.buffer);
-};
+export const sha256Hex = async (value: unknown): Promise<string> =>
+  bytesToSha256Hex(new TextEncoder().encode(stableStringify(value)));
 
 export const sha256Blob = async (blob: Blob): Promise<string> =>
   bytesToSha256Hex(await blob.arrayBuffer());
@@ -210,8 +208,8 @@ export const bindArtifactToDashboardEvidenceManifest = async (
     sha256: await sha256Blob(blob),
   };
 
-  const artifacts = [...(manifest.artifacts ?? []), artifact].sort((left, right) =>
-    left.filename.localeCompare(right.filename),
+  const artifacts = [...(manifest.artifacts ?? []), artifact].sort(
+    (left, right) => left.filename.localeCompare(right.filename),
   );
   const binding_sha256 = await sha256Hex({
     state_sha256: manifest.state_sha256,
