@@ -18,6 +18,7 @@
  */
 
 import {
+  bindArtifactToDashboardEvidenceManifest,
   buildDashboardEvidenceManifest,
   stableStringify,
 } from './evidenceManifest';
@@ -121,4 +122,38 @@ test('builds a privacy-safe deterministic dashboard evidence manifest', async ()
   expect(serialized).not.toContain('East');
   expect(serialized).not.toContain('internal-secret');
   expect(serialized).not.toContain('count');
+});
+
+test('binds exact artifact bytes without changing the dashboard state hash', async () => {
+  const manifest = await buildDashboardEvidenceManifest({
+    dashboardId: 42,
+    dashboardTitle: 'Fund Operations',
+    generatedAt: '2026-09-06T04:00:00.000Z',
+  });
+  const firstBlob = new Blob(['raw-pdf-bytes'], { type: 'application/pdf' });
+  const secondBlob = new Blob(['raw-pdf-bytes-2'], { type: 'application/pdf' });
+
+  const first = await bindArtifactToDashboardEvidenceManifest(
+    manifest,
+    firstBlob,
+    'fund-operations.pdf',
+  );
+  const second = await bindArtifactToDashboardEvidenceManifest(
+    manifest,
+    secondBlob,
+    'fund-operations.pdf',
+  );
+
+  expect(first.state_sha256).toBe(manifest.state_sha256);
+  expect(first.artifacts).toEqual([
+    {
+      filename: 'fund-operations.pdf',
+      media_type: 'application/pdf',
+      size_bytes: firstBlob.size,
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    },
+  ]);
+  expect(first.binding_sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(second.artifacts?.[0].sha256).not.toBe(first.artifacts?.[0].sha256);
+  expect(second.binding_sha256).not.toBe(first.binding_sha256);
 });

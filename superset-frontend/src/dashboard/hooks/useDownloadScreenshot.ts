@@ -36,9 +36,20 @@ import { DownloadScreenshotFormat } from '../components/menu/DownloadMenuItems/t
 const RETRY_INTERVAL = 3000;
 const MAX_RETRIES = 30;
 
+export interface DownloadedScreenshotArtifact {
+  blob: Blob;
+  fileName: string;
+  format: DownloadScreenshotFormat;
+}
+
+type ArtifactReadyCallback = (
+  artifact: DownloadedScreenshotArtifact,
+) => Promise<void> | void;
+
 export const useDownloadScreenshot = (
   dashboardId: number,
   logEvent?: Function,
+  onArtifactReady?: ArtifactReadyCallback,
 ) => {
   const activeTabs = useSelector(
     (state: RootState) => state.dashboardState.activeTabs || undefined,
@@ -119,12 +130,24 @@ export const useDownloadScreenshot = (
 
             return response.blob().then(blob => ({ blob, fileName }));
           })
-          .then(({ blob, fileName }) => {
+          .then(async ({ blob, fileName }) => {
             if (isDownloaded) {
               return;
             }
             isDownloaded = true;
             stopIntervals('success');
+
+            try {
+              await onArtifactReady?.({ blob, fileName, format });
+            } catch (error) {
+              logging.error('Failed to bind screenshot evidence', {
+                dashboardId,
+                format,
+                fileName,
+                error,
+              });
+            }
+
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -207,6 +230,7 @@ export const useDownloadScreenshot = (
       addInfoToast,
       stopIntervals,
       logEvent,
+      onArtifactReady,
     ],
   );
 

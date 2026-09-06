@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { SyntheticEvent } from 'react';
+import { SyntheticEvent, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { logging } from '@apache-superset/core/utils';
 import { t } from '@apache-superset/core/translation';
@@ -29,9 +29,11 @@ import {
 import { MenuItem } from '@superset-ui/core/components/Menu';
 import { parse as parseContentDisposition } from 'content-disposition';
 import { useDownloadScreenshot } from 'src/dashboard/hooks/useDownloadScreenshot';
+import type { DownloadedScreenshotArtifact } from 'src/dashboard/hooks/useDownloadScreenshot';
 import { NATIVE_FILTER_PREFIX } from 'src/dashboard/components/nativeFilters/FiltersConfigModal/utils';
 import { MenuKeys, RootState } from 'src/dashboard/types';
 import {
+  bindArtifactToDashboardEvidenceManifest,
   buildDashboardEvidenceManifest,
   downloadDashboardEvidenceManifest,
 } from 'src/dashboard/util/evidenceManifest';
@@ -96,11 +98,55 @@ export const useDownloadMenuItems = (
       return acc;
     }, {});
 
+  const buildEvidenceManifest = useCallback(
+    () =>
+      buildDashboardEvidenceManifest({
+        dashboardId,
+        dashboardTitle,
+        lastModifiedTime: dashboardInfo?.last_modified_time,
+        dataMask,
+        nativeFilters: nativeFilters?.filters,
+        charts,
+      }),
+    [
+      dashboardId,
+      dashboardTitle,
+      dashboardInfo?.last_modified_time,
+      dataMask,
+      nativeFilters?.filters,
+      charts,
+    ],
+  );
+
+  const onScreenshotArtifactReady = useCallback(
+    async ({ blob, fileName }: DownloadedScreenshotArtifact) => {
+      const manifest = await buildEvidenceManifest();
+      const boundManifest = await bindArtifactToDashboardEvidenceManifest(
+        manifest,
+        blob,
+        fileName,
+      );
+      downloadDashboardEvidenceManifest(boundManifest);
+      logEvent?.(LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST, {
+        state_sha256: boundManifest.state_sha256,
+        artifact_sha256: boundManifest.artifacts?.[0]?.sha256,
+        binding_sha256: boundManifest.binding_sha256,
+        artifact_filename: fileName,
+        schema: boundManifest.schema,
+      });
+    },
+    [buildEvidenceManifest, logEvent],
+  );
+
   const isWebDriverScreenshotEnabled =
     isFeatureEnabled(FeatureFlag.EnableDashboardScreenshotEndpoints) &&
     isFeatureEnabled(FeatureFlag.EnableDashboardDownloadWebDriverScreenshot);
 
-  const downloadScreenshot = useDownloadScreenshot(dashboardId, logEvent);
+  const downloadScreenshot = useDownloadScreenshot(
+    dashboardId,
+    logEvent,
+    userCanExport ? onScreenshotArtifactReady : undefined,
+  );
 
   const onDownloadPdf = async (e: SyntheticEvent) => {
     try {
@@ -124,14 +170,7 @@ export const useDownloadMenuItems = (
 
   const onDownloadEvidenceManifest = async () => {
     try {
-      const manifest = await buildDashboardEvidenceManifest({
-        dashboardId,
-        dashboardTitle,
-        lastModifiedTime: dashboardInfo?.last_modified_time,
-        dataMask,
-        nativeFilters: nativeFilters?.filters,
-        charts,
-      });
+      const manifest = await buildEvidenceManifest();
       downloadDashboardEvidenceManifest(manifest);
       logEvent?.(LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST, {
         state_sha256: manifest.state_sha256,
