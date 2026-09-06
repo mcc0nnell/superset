@@ -31,7 +31,9 @@ import {
   buildDashboardEvidenceManifest,
   downloadDashboardEvidenceManifest,
 } from 'src/dashboard/util/evidenceManifest';
-import { LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST } from 'src/logger/LogUtils';
+import {
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST,
+} from 'src/logger/LogUtils';
 import { useDownloadMenuItems } from '.';
 
 const mockAddSuccessToast = jest.fn();
