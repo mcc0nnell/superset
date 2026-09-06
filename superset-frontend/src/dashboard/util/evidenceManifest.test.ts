@@ -29,7 +29,8 @@ beforeAll(() => {
     const input = new Uint8Array(data as ArrayBuffer);
     const output = new Uint8Array(32);
     input.forEach((byte, index) => {
-      output[index % output.length] ^= byte;
+      const outputIndex = index % output.length;
+      output[outputIndex] = (output[outputIndex] + byte) % 256;
     });
     return output.buffer;
   });
