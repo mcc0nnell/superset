@@ -65,14 +65,15 @@ def build_excel_export_evidence(
     requested_at: datetime,
     completed_at: datetime,
     errored: dict[str, list[str]],
+    config_snapshot_sha256: str | None = None,
+    config_snapshot_verified: bool = False,
 ) -> dict[str, Any]:
     """Describe the exact workbook and the worker state that produced it.
 
-    This deliberately does not reuse the browser-side dashboard evidence schema:
-    the async worker may execute after the browser snapshot has gone stale. The
-    attestation records the dashboard revision observed by the worker and hashes
-    the submitted filter mask instead of claiming equivalence with an earlier
-    client-side state hash.
+    Browser-side dashboard evidence is a different scope. For asynchronous Excel
+    exports this attestation records the worker-observed dashboard revision and,
+    when the API supplied an enqueue fingerprint, whether dashboard/chart export
+    configuration was verified unchanged before workbook generation.
     """
     payload: dict[str, Any] = {
         "schema": SCHEMA,
@@ -102,6 +103,12 @@ def build_excel_export_evidence(
             "skipped_charts": errored,
         },
     }
+    if config_snapshot_sha256:
+        payload["configuration"] = {
+            "scope": "dashboard-chart-export-config/v1",
+            "snapshot_sha256": config_snapshot_sha256,
+            "verified_against_enqueue": config_snapshot_verified,
+        }
     payload["attestation_sha256"] = sha256_value(payload)
     return payload
 
