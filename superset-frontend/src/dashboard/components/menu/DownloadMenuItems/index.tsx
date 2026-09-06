@@ -31,12 +31,17 @@ import { parse as parseContentDisposition } from 'content-disposition';
 import { useDownloadScreenshot } from 'src/dashboard/hooks/useDownloadScreenshot';
 import { NATIVE_FILTER_PREFIX } from 'src/dashboard/components/nativeFilters/FiltersConfigModal/utils';
 import { MenuKeys, RootState } from 'src/dashboard/types';
+import {
+  buildDashboardEvidenceManifest,
+  downloadDashboardEvidenceManifest,
+} from 'src/dashboard/util/evidenceManifest';
 import downloadAsPdf from 'src/utils/downloadAsPdf';
 import downloadAsImage from 'src/utils/downloadAsImage';
 import handleResourceExport from 'src/utils/export';
 import {
   LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_PDF,
   LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_IMAGE,
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST,
 } from 'src/logger/LogUtils';
 import { useToasts } from 'src/components/MessageToasts/withToasts';
 
@@ -71,7 +76,14 @@ export const useDownloadMenuItems = (
   } = props;
 
   const { addDangerToast, addSuccessToast } = useToasts();
-  const dataMask = useSelector((state: RootState) => state.dataMask);
+  const { dataMask, nativeFilters, charts, dashboardInfo } = useSelector(
+    (state: RootState) => ({
+      dataMask: state.dataMask,
+      nativeFilters: state.nativeFilters,
+      charts: state.charts,
+      dashboardInfo: state.dashboardInfo,
+    }),
+  );
   const SCREENSHOT_NODE_SELECTOR = '.dashboard';
 
   const buildActiveDataMask = (): Record<string, { extraFormData: object }> =>
@@ -108,6 +120,28 @@ export const useDownloadMenuItems = (
       addDangerToast(t('Sorry, something went wrong. Try again later.'));
     }
     logEvent?.(LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_IMAGE);
+  };
+
+  const onDownloadEvidenceManifest = async () => {
+    try {
+      const manifest = await buildDashboardEvidenceManifest({
+        dashboardId,
+        dashboardTitle,
+        lastModifiedTime: dashboardInfo?.last_modified_time,
+        dataMask,
+        nativeFilters: nativeFilters?.filters,
+        charts,
+      });
+      downloadDashboardEvidenceManifest(manifest);
+      logEvent?.(LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST, {
+        state_sha256: manifest.state_sha256,
+        schema: manifest.schema,
+      });
+      addSuccessToast(t('Evidence manifest downloaded'));
+    } catch (error) {
+      logging.error(error);
+      addDangerToast(t('Sorry, something went wrong. Try again later.'));
+    }
   };
 
   const onExportZip = async () => {
@@ -265,6 +299,11 @@ export const useDownloadMenuItems = (
                 },
               ]
             : []),
+          {
+            key: 'export-evidence-manifest',
+            label: t('Download evidence manifest'),
+            onClick: onDownloadEvidenceManifest,
+          },
         ]
       : []),
     {
