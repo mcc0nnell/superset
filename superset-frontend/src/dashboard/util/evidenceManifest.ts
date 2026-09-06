@@ -56,6 +56,13 @@ export interface EvidenceChartIdentity {
   form_data_sha256: string;
 }
 
+export interface EvidenceArtifact {
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  sha256: string;
+}
+
 export interface DashboardEvidenceManifest {
   schema: 'org.apache.superset.evidence/v1';
   generated_at: string;
@@ -70,6 +77,8 @@ export interface DashboardEvidenceManifest {
   filters: EvidenceFilter[];
   charts: EvidenceChartIdentity[];
   state_sha256: string;
+  artifacts?: EvidenceArtifact[];
+  binding_sha256?: string;
 }
 
 const canonicalize = (value: unknown): unknown => {
@@ -95,18 +104,25 @@ const canonicalize = (value: unknown): unknown => {
 export const stableStringify = (value: unknown): string =>
   JSON.stringify(canonicalize(value)) ?? 'null';
 
-export const sha256Hex = async (value: unknown): Promise<string> => {
+const bytesToSha256Hex = async (bytes: ArrayBuffer): Promise<string> => {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {
     throw new Error('Web Crypto SHA-256 is unavailable');
   }
 
-  const bytes = new TextEncoder().encode(stableStringify(value));
   const digest = await subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest))
     .map(byte => byte.toString(16).padStart(2, '0'))
     .join('');
 };
+
+export const sha256Hex = async (value: unknown): Promise<string> => {
+  const bytes = new TextEncoder().encode(stableStringify(value));
+  return bytesToSha256Hex(bytes.buffer);
+};
+
+export const sha256Blob = async (blob: Blob): Promise<string> =>
+  bytesToSha256Hex(await blob.arrayBuffer());
 
 const hasFilterValue = (value: unknown): boolean => {
   if (value == null) {
@@ -182,6 +198,33 @@ export const buildDashboardEvidenceManifest = async ({
   };
 };
 
+export const bindArtifactToDashboardEvidenceManifest = async (
+  manifest: DashboardEvidenceManifest,
+  blob: Blob,
+  filename: string,
+): Promise<DashboardEvidenceManifest> => {
+  const artifact: EvidenceArtifact = {
+    filename,
+    media_type: blob.type || 'application/octet-stream',
+    size_bytes: blob.size,
+    sha256: await sha256Blob(blob),
+  };
+
+  const artifacts = [...(manifest.artifacts ?? []), artifact].sort((left, right) =>
+    left.filename.localeCompare(right.filename),
+  );
+  const binding_sha256 = await sha256Hex({
+    state_sha256: manifest.state_sha256,
+    artifacts,
+  });
+
+  return {
+    ...manifest,
+    artifacts,
+    binding_sha256,
+  };
+};
+
 export const downloadDashboardEvidenceManifest = (
   manifest: DashboardEvidenceManifest,
 ): void => {
@@ -192,7 +235,10 @@ export const downloadDashboardEvidenceManifest = (
   try {
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `dashboard_${manifest.dashboard.id}_evidence.json`;
+    anchor.download =
+      manifest.artifacts?.length === 1
+        ? `${manifest.artifacts[0].filename}.evidence.json`
+        : `dashboard_${manifest.dashboard.id}_evidence.json`;
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();
