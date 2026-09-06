@@ -19,7 +19,9 @@
 
 import { Dispatch } from 'redux';
 import { LOG_EVENT } from 'src/logger/actions';
-import { LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST } from 'src/logger/LogUtils';
+import {
+  LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST,
+} from 'src/logger/LogUtils';
 import logger from 'src/middleware/loggerMiddleware';
 
 test('evidence manifest events retain the state hash and active filter context', () => {
