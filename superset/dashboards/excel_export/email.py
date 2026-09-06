@@ -115,6 +115,22 @@ def _errored_section(errored: dict[str, list[str]]) -> str:
     return "".join(sections)
 
 
+def _evidence_section(evidence_url: str | None, artifact_sha256: str | None) -> str:
+    """Render optional verification information for the generated workbook."""
+    if not (evidence_url or artifact_sha256):
+        return ""
+
+    parts = [f"<p>{__('Verification')}</p>"]
+    if artifact_sha256:
+        label = __("Excel file SHA-256")
+        parts.append(f"<p>{label}: <code>{escape(artifact_sha256)}</code></p>")
+    if evidence_url:
+        url = escape(evidence_url)
+        label = __("Download evidence manifest")
+        parts.append(f'<p><a href="{url}">{label}</a></p>')
+    return "".join(parts)
+
+
 def build_success_email(
     dashboard_title: str,
     download_url: str,
@@ -122,6 +138,8 @@ def build_success_email(
     expires_at: datetime,
     ttl_seconds: int,
     errored: dict[str, list[str]],
+    evidence_url: str | None = None,
+    artifact_sha256: str | None = None,
 ) -> str:
     """Render the success email body (HTML)."""
     title = escape(dashboard_title)
@@ -142,6 +160,7 @@ def build_success_email(
         f"<p>{ready}</p>"
         f'<p><a href="{url}" style="{_BUTTON_STYLE}">{button}</a></p>'
         f"<p>{expiry}</p>"
+        f"{_evidence_section(evidence_url, artifact_sha256)}"
         f"{_errored_section(errored)}"
         "<hr/>"
         f'<p style="{_FOOTER_STYLE}">{requested}<br/>{disclaimer}</p>'
