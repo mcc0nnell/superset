@@ -28,10 +28,8 @@ import {
 } from '@superset-ui/core';
 import { MenuItem } from '@superset-ui/core/components/Menu';
 import { parse as parseContentDisposition } from 'content-disposition';
-import {
-  DownloadedScreenshotArtifact,
-  useDownloadScreenshot,
-} from 'src/dashboard/hooks/useDownloadScreenshot';
+import { useDownloadScreenshot } from 'src/dashboard/hooks/useDownloadScreenshot';
+import type { DownloadedScreenshotArtifact } from 'src/dashboard/hooks/useDownloadScreenshot';
 import { NATIVE_FILTER_PREFIX } from 'src/dashboard/components/nativeFilters/FiltersConfigModal/utils';
 import { MenuKeys, RootState } from 'src/dashboard/types';
 import {
