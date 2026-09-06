@@ -44,6 +44,7 @@ import {
   LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_PDF,
   LOG_ACTIONS_DASHBOARD_DOWNLOAD_AS_IMAGE,
   LOG_ACTIONS_DASHBOARD_DOWNLOAD_EVIDENCE_MANIFEST,
+  LOG_ACTIONS_DASHBOARD_EXPORT_XLSX,
 } from 'src/logger/LogUtils';
 import { useToasts } from 'src/components/MessageToasts/withToasts';
 
@@ -248,7 +249,12 @@ export const useDownloadMenuItems = (
       });
       // The throttle response (an export is already running) returns 202 with a
       // message but no job_id; only a freshly enqueued job carries a job_id.
-      if ((json as { job_id?: string })?.job_id) {
+      const jobId = (json as { job_id?: string })?.job_id;
+      if (jobId) {
+        logEvent?.(LOG_ACTIONS_DASHBOARD_EXPORT_XLSX, {
+          job_id: jobId,
+          mode,
+        });
         addSuccessToast(
           t(
             "Your export is being prepared. You'll receive an email when it's ready.",
